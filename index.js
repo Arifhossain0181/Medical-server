@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const path = require("path");
+const multer = require("multer");
 const { Server } = require("socket.io");
 const { ObjectId } = require("mongodb");
 const { MongoClient, ServerApiVersion } = require("mongodb");
@@ -8,12 +10,27 @@ require("dotenv").config();
 
 const app = express();
 const port = process.env.PORT || 5000;
+// Serve uploads folder
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
+
+// Configure multer for file uploads with proper extensions
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => {
+    // Keep original extension
+    const ext = path.extname(file.originalname); // .png, .docx, etc.
+    const uniqueName = Date.now() + "-" + file.fieldname + ext;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({ storage: storage });
 
 // Socket.io setup
 const io = new Server(server, {
@@ -40,7 +57,8 @@ async function run() {
     const doctorscollection = db.collection("doctors");
     const servicscollection = db.collection("service");
     const mycarcollection = db.collection("mycart");
-    const chatCollection = db.collection("chats"); // New collection for messages
+    const chatCollection = db.collection("chats"); 
+    const docterorsCollection = db.collection("registerdoctors");
 
     // ========== REST APIs ==========
 
@@ -76,6 +94,77 @@ async function run() {
       const result = await mycarcollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
+
+    // doctors registeration
+   app.post('/register-doctor',upload.fields([
+     { name: "license" },
+    { name: "degrees" },
+    { name: "idProof" },
+    { name: "profilePhoto" },
+   ]),
+  async(req,res) =>{
+    try{
+      const doctorData = {
+        ...req.body,
+        files:req.files,
+        status: "pending",
+      createdAt: new Date(),
+      };
+      const result = await docterorsCollection.insertOne(doctorData);
+      res.status(200).json({
+        success: true,
+        message: "Doctor registered successfully",
+        doctorId: result.insertedId,
+      });
+
+    } catch (error) {
+      console.error("Error registering doctor:", error);
+      res.status(500).send({ message: 'Internal server error' });
+    }
+  })
+
+
+  // all the doctors here registered
+
+  app.get('/register-doctors-all', async (req, res) => {
+    try {
+      const doctors = await docterorsCollection.find().sort({ createdAt: -1 }).toArray();
+      res.status(200).json(doctors);
+    } catch (error) {
+      console.error("Error fetching registered doctors:", error);
+      res.status(500).send({ message: 'Internal server error' });
+    }
+  })
+
+  // approve or reject doctor registration
+  app.patch('/register-doctors-status/:id', async (req, res) => {
+    try{
+      const {id} = req.params;
+      const {status} = req.body;
+      if(!['approved','rejected'].includes(status)){
+        return res.status(400).json({message: 'Invalid status value'});
+      }
+      const result = await docterorsCollection.updateOne({_id: new ObjectId(id)},
+    {$set: {status, updatedAt: new Date()}});
+    if(result.modifiedCount === 0){
+      res.status(200).json({message: 'Doctor status updated successfully'});
+    }
+    }
+    catch (error) {
+      console.error("Error updating doctor status:", error);
+      res.status(500).send({ message: 'Internal server error' });
+    }
+
+
+  })
+
+
+
+
+
+
+
+
 
    // GET chat history with pagination
 app.get("/chat/:user1/:user2", async (req, res) => {
