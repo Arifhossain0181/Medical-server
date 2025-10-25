@@ -54,7 +54,7 @@ async function run() {
     await client.connect();
     const db = client.db("Madical");
 
-    const doctorscollection = db.collection("doctors");
+   
     const servicscollection = db.collection("service");
     const mycarcollection = db.collection("mycart");
     const chatCollection = db.collection("chats"); 
@@ -62,21 +62,9 @@ async function run() {
 
     // ========== REST APIs ==========
 
-    app.get("/doctors", async (req, res) => {
-      const doctors = await doctorscollection.find().toArray();
-      res.send(doctors);
-    });
+   
 
-    app.get("/doctors/:id", async (req, res) => {
-      const id = Number(req.params.id);
-      const doctor = await doctorscollection.findOne({ id });
-      res.send(doctor);
-    });
-
-    app.get("/service", async (req, res) => {
-      const services = await servicscollection.find().toArray();
-      res.send(services);
-    });
+   
 
     app.get("/mycart", async (req, res) => {
       const result = await mycarcollection.find().toArray();
@@ -157,6 +145,85 @@ async function run() {
 
 
   })
+
+  // GET all approved doctors
+  app.get('/register-doctors-approved',async(req,res) =>{
+    try{
+      const {search} = req.query;
+      const query = {status: 'approved'};
+      if(search){
+        query.fullname ={ $regex: search, $options: 'i' };
+      }
+      const approvedDoctors = await docterorsCollection.find(query).sort({ createdAt: -1 }).toArray();
+      if(!approvedDoctors.length){
+        return res.status(404).json({message: 'No approved doctors found'});
+      }
+      res.status(200).json(approvedDoctors);
+    }
+     catch (error) {
+    console.error("Error fetching approved doctors:", error);
+    res.status(500).send({ message: "Failed to fetch approved doctors." });
+  }
+  });
+
+  // Get all rejected doctors
+  app.get('/register-doctors-rejected',async(req,res) =>{
+    try{
+      
+      const {search} = req.query;
+      const query = {status: 'rejected'};
+      if(search){
+        query.fullname ={ $regex: search, $options: 'i' };
+      }
+
+      const rejectedDoctors = await docterorsCollection.find(query).sort({ createdAt: -1 }).toArray();
+      if(!rejectedDoctors.length){
+        return res.status(404).json({message: 'No rejected doctors found'});
+      }
+      res.status(200).json(rejectedDoctors);
+    }
+    catch (error) {
+      console.error("Error fetching rejected doctors:", error);
+      res.status(500).send({ message: "Failed to fetch rejected doctors." });
+    }
+
+  })
+
+  // delet a registered doctor
+  app.delete('/register-doctors/:id',async(req,res) =>{
+    try{
+      const {id} = req.params;
+      const deleltedoctor = await docterorsCollection.deleteOne({_id: new ObjectId(id)});
+      if(deleltedoctor.deletedCount === 0){
+        return res.status(404).json({message: 'Doctor not found'});
+      }
+      res.status(200).json({message: 'Doctor deleted successfully'});
+    }
+    catch (error) {
+      console.error("Error deleting doctor:", error);
+      res.status(500).send({ message: 'Internal server error' });
+    }
+  })
+  // GET single doctor by ID
+app.get("/register-doctors/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid doctor ID" });
+    }
+
+    const doctor = await docterorsCollection.findOne({ _id: new ObjectId(id) });
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+
+    res.status(200).json(doctor);
+  } catch (error) {
+    console.error("Error fetching doctor:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 
 
 
