@@ -59,6 +59,7 @@ async function run() {
     const mycarcollection = db.collection("mycart");
     const chatCollection = db.collection("chats"); 
     const docterorsCollection = db.collection("registerdoctors");
+    const AppointmentCollection = db.collection("appointments");
 
     // ========== REST APIs ==========
 
@@ -223,6 +224,126 @@ app.get("/register-doctors/:id", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+// // Get all unique specializations from approved doctors
+ app.get('/approved-doctors-specializations', async (req, res) => {
+  try {
+    const pipeline =[
+      { $match: { status: 'approved' } },
+      {$group: {
+          _id: "$specialization",
+          count: { $sum: 1 },
+        },
+
+      },
+      { $sort :{count: -1}}
+    ];
+    const result = await docterorsCollection.aggregate(pipeline).toArray();
+    const specializations = result.map(item => ({
+      specialization: item._id,
+      count: item.count,
+    }));
+    res.status(200).json(specializations);
+  }
+  catch (error) {
+    console.error("Error fetching specializations:", error);
+    res.status(500).send({ message: 'Internal server error' });
+  }
+
+ });
+
+
+
+ // POST appointments
+ app.post('/appointments', async (req, res) => {
+  const { doctorId, patientName, patientId, appointmentDate, time, reason } = req.body;
+  
+  try {
+    // Log received data for debugging
+    console.log('Received appointment data:', req.body);
+
+    // Validate required fields
+    if (!doctorId || !patientName || !appointmentDate) {
+      console.log('Missing fields - doctorId:', doctorId, 'patientName:', patientName, 'appointmentDate:', appointmentDate);
+      return res.status(400).json({ 
+        message: "Missing required fields",
+        received: { doctorId, patientName, appointmentDate }
+      });
+    }
+
+    // Get doctor details
+    const doctor = await docterorsCollection.findOne({ 
+      _id: new ObjectId(doctorId),
+      status: 'approved' 
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found or not approved" });
+    }
+// Check if this email already booked an appointment with this doctor on this date
+const existingEmailAppointment = await AppointmentCollection.findOne({
+  doctorId,
+  date: appointmentDate,
+  patientEmail: patientEmail,
+});
+
+if (existingEmailAppointment) {
+  return res.status(400).json({ message: "You already have an appointment on this date with this doctor." });
+}
+
+// Count existing appointments for this doctor on this date
+const existingCount  = await AppointmentCollection.countDocuments({
+  doctorId,
+  date: appointmentDate,
+  status: "confirmed",
+    });
+    const doctors = await docterorsCollection.find({ status: 'approved' }).toArray();
+for (let doc of doctors) {
+  const todayAppointments = await AppointmentCollection.countDocuments({
+    doctorId: doc._id,
+    date: new Date().toISOString().split('T')[0],
+    status: 'confirmed',
+  });
+  doc.nextSerial = todayAppointments + 1;
+}
+res.json(doctors);
+
+
+    const serial = existingCount + 1;
+
+
+    // Create new appointment
+    const newAppointment = {
+      doctorId,
+      patientId: patientId || null,
+      patientName,
+      date: appointmentDate,
+      time: time || doctor.available_time,
+      reason: reason || "",
+      status: "confirmed",
+      serial,
+      createdAt: new Date(),
+    };
+
+    const result = await AppointmentCollection.insertOne(newAppointment);
+
+    res.status(201).json({
+      success: true,
+      message: "Appointment booked successfully",
+      appointmentId: result.insertedId,
+      serial: serial,
+      doctor: {
+        name: doctor.fullName,
+        specialization: doctor.specialization,
+        hospital: doctor.hospital,
+        available_time: doctor.available_time,
+      },
+    });
+  } catch (error) {
+    console.error('Error booking appointment:', error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+ })
+
 
 
 
