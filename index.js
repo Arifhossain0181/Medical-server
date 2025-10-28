@@ -344,6 +344,67 @@ res.json(doctors);
   }
  })
 
+ // APPointmentlist list 
+ app.get('/appointments-list', async (req, res) => {
+   try {
+    const appointments = await AppointmentCollection.find().sort({ createdAt: -1 ,serial:1 , date:1 }).toArray();
+
+    if (appointments.length === 0) {
+      return res.status(404).json({ message: "No appointments found" });
+    }
+
+    // collect doctors id and Patient id
+     const doctorIds = [...new Set(appointments.map(a => a.doctorId))];
+     const patientIds = [...new Set(appointments.map(a => a.patientId))];
+
+     // Fetch doctors and patients details
+   const doctors = await docterorsCollection
+      .find({ _id: { $in: doctorIds.map(id => new ObjectId(id)) } })
+      .project({ fullName: 1, specialization: 1, hospital: 1 })
+      .toArray();
+       const patients = await db
+      .collection("users") // assuming your user collection is named 'users'
+      .find({ _id: { $in: patientIds.map(id => new ObjectId(id)) } })
+      .project({ name: 1, email: 1, phone: 1 })
+      .toArray();
+
+        // Merge doctor + patient info into appointment list
+    const enrichedAppointments = appointments.map(a => {
+      const doctor = doctors.find(d => d._id.toString() === a.doctorId);
+      const patient = patients.find(p => p._id.toString() === a.patientId);
+
+      return {
+        _id: a._id,
+        date: a.date,
+        time: a.time,
+        serial: a.serial,
+        status: a.status,
+        reason: a.reason || "",
+        doctor: doctor
+          ? {
+              name: doctor.fullName,
+              specialization: doctor.specialization,
+              hospital: doctor.hospital,
+            }
+          : null,
+        patient: patient
+          ? {
+              name: patient.name,
+              email: patient.email,
+              phone: patient.phone,
+            }
+          : null,
+      };
+    });
+    res.status(200).json(enrichedAppointments);
+   
+
+   } catch (error) {
+     console.error('Error fetching appointments:', error);
+     res.status(500).json({ message: "Internal server error" });
+   }
+
+ })
 
 
 
